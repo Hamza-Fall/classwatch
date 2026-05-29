@@ -12,28 +12,25 @@ import unicodedata
 #  PAGE CONFIG
 # ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="ClassWatch · Gestion des incidents",
+    page_title="ClassWatch",
     page_icon="🏫",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ─────────────────────────────────────────────
-#  CUSTOM CSS — Design épuré et moderne
+#  CUSTOM CSS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-/* ── Reset & base ── */
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
 }
 .stApp {
     background: #F4F6FA;
 }
-
-/* ── Sidebar ── */
 section[data-testid="stSidebar"] {
     background: #0F172A !important;
     border-right: none;
@@ -46,8 +43,6 @@ section[data-testid="stSidebar"] h2,
 section[data-testid="stSidebar"] h3 {
     color: #F8FAFC !important;
 }
-
-/* ── Header ── */
 .cw-header {
     background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%);
     border-radius: 16px;
@@ -74,8 +69,6 @@ section[data-testid="stSidebar"] h3 {
     font-size: 14px;
     margin: 4px 0 0 0;
 }
-
-/* ── Cards ── */
 .cw-card {
     background: #FFFFFF;
     border-radius: 14px;
@@ -92,8 +85,6 @@ section[data-testid="stSidebar"] h3 {
     color: #64748B;
     margin-bottom: 16px;
 }
-
-/* ── Incident badges ── */
 .incident-badge {
     display: inline-flex;
     align-items: center;
@@ -109,7 +100,6 @@ section[data-testid="stSidebar"] h3 {
 .badge-success { background:#DCFCE7; color:#16A34A; }
 .badge-info    { background:#DBEAFE; color:#2563EB; }
 
-/* ── Status indicator ── */
 .status-dot {
     width: 10px; height: 10px;
     border-radius: 50%;
@@ -120,7 +110,6 @@ section[data-testid="stSidebar"] h3 {
 .dot-red    { background: #EF4444; box-shadow: 0 0 6px #EF444488; }
 .dot-yellow { background: #EAB308; box-shadow: 0 0 6px #EAB30888; }
 
-/* ── History items ── */
 .history-item {
     background: #F8FAFC;
     border: 1px solid #E2E8F0;
@@ -138,7 +127,6 @@ section[data-testid="stSidebar"] h3 {
 .history-severity-medium { border-left: 4px solid #EAB308; }
 .history-severity-low    { border-left: 4px solid #22C55E; }
 
-/* ── Stat cards ── */
 .stat-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -166,8 +154,6 @@ section[data-testid="stSidebar"] h3 {
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
-
-/* ── Streamlit overrides ── */
 .stButton > button {
     background: #1E293B;
     color: white;
@@ -181,33 +167,22 @@ section[data-testid="stSidebar"] h3 {
     transition: all 0.2s;
     box-shadow: 0 2px 8px rgba(15,23,42,0.2);
 }
-.stButton > button:hover {
-    background: #334155;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(15,23,42,0.3);
-}
 div[data-testid="stFileUploader"] {
     background: white;
     border: 2px dashed #CBD5E1;
     border-radius: 12px;
     padding: 12px;
 }
-.stSpinner > div {
-    border-color: #1E293B transparent transparent transparent !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-#  FONCTION SÉCURITÉ ENCODAGE (Suppression des accents)
+#  FONCTION SÉCURITÉ ENCODAGE
 # ─────────────────────────────────────────────
 def remove_accents(input_str: str) -> str:
-    """Supprime tous les accents et caractères non-ASCII d'une chaîne pour éviter le bug de codec."""
-    # Décompose les caractères accentués (ex: 'é' devient 'e' + accent)
+    """Supprime proprement les accents pour s'assurer qu'aucune chaine ne fait crasher le codec ascii."""
     nfkd_form = unicodedata.normalize('NFKD', input_str)
-    # Filtre pour ne garder que les caractères de base non-accentués
     only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-    # Encodage de secours pour éliminer définitivement tout résidu invisible non-ASCII
     return only_ascii.encode('ascii', errors='ignore').decode('ascii')
 
 # ─────────────────────────────────────────────
@@ -241,32 +216,33 @@ if "last_analysis" not in st.session_state:
 #  SIDEBAR
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏫 ClassWatch")
+    st.markdown("## ClassWatch")
     st.markdown("---")
-    st.markdown("### ⚙️ Configuration")
+    st.markdown("### Configuration")
 
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
     if not api_key:
         api_key = st.text_input(
-            "Clé API Anthropic",
+            "Cle API Anthropic",
             type="password",
             placeholder="sk-ant-...",
         )
     else:
-        st.success("🔑 Clé API chargée automatiquement")
+        st.success("Cle API chargee automatiquement")
 
     st.markdown("---")
-    st.markdown("### 🎯 Incidents détectés")
+    st.markdown("### Incidents a verifier")
 
+    # Suppression des accents dans les clés des cases à cocher pour éliminer le problème d'envoi
     checks = {
-        "👨‍🏫 Presence du professeur": True,
-        "🪑 Chaises renversees": True,
-        "💻 Ordinateurs allumes": True,
-        "🎒 Affaires abandonnees": True,
-        "🚪 Portes ouvertes": True,
-        "📺 Ecran allume": True,
-        "🏃 Eleves debout": True,
-        "🔇 Ambiance calme": True,
+        "Presence du professeur": True,
+        "Chaises renversees": True,
+        "Ordinateurs allumes": True,
+        "Affaires abandonnees": True,
+        "Portes ouvertes": True,
+        "Ecran allume": True,
+        "Eleves debout": True,
+        "Ambiance calme": True,
     }
 
     selected_checks = {}
@@ -274,10 +250,10 @@ with st.sidebar:
         selected_checks[label] = st.checkbox(label, value=default)
 
     st.markdown("---")
-    st.markdown("### 📊 Session")
-    st.markdown(f"**Analyses effectuées :** {len(st.session_state.history)}")
+    st.markdown("### Session")
+    st.markdown(f"Analyses effectuees : {len(st.session_state.history)}")
 
-    if st.button("🗑️ Effacer l'historique"):
+    if st.button("Effacer l'historique"):
         st.session_state.history = []
         st.session_state.last_analysis = None
         st.rerun()
@@ -324,13 +300,12 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 col_left, col_right = st.columns([1.1, 1], gap="large")
 
-# ── LEFT: Upload + Analyse ──
 with col_left:
     st.markdown('<div class="cw-card">', unsafe_allow_html=True)
     st.markdown('<div class="cw-card-title">📷 Photo de la salle</div>', unsafe_allow_html=True)
 
     uploaded = st.file_uploader(
-        "Glisse une photo ici ou clique",
+        "Glisse une photo ici",
         type=["jpg", "jpeg", "png", "webp"],
         label_visibility="collapsed"
     )
@@ -348,10 +323,8 @@ with col_left:
     elif not uploaded:
         st.info("💡 Charge une photo de ta salle pour lancer l'analyse.")
 
-# ── RIGHT: Résultats ──
 with col_right:
-    
-    # ── BLOC MÉTÉO & CLIMATISATION ──
+    # ── BLOC MÉTÉO ──
     st.markdown('<div class="cw-card">', unsafe_allow_html=True)
     st.markdown('<div class="cw-card-title">🌤️ Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
     if ext_temp is not None:
@@ -427,7 +400,6 @@ with col_right:
                 {recs_html}
             </div>
             """, unsafe_allow_html=True)
-
     else:
         st.markdown("""
         <div class="cw-card" style="text-align:center;padding:48px 24px">
@@ -451,9 +423,8 @@ def encode_image(file) -> tuple[str, str]:
     media_type = media_map.get(ext, "image/jpeg")
     
     raw_bytes = file.getvalue()
-    data = base64.b64encode(raw_bytes).decode("ascii") # Base64 pur ne contient aucun caractère accentué, ascii est sûr ici
+    data = base64.b64encode(raw_bytes).decode("ascii")
     return data, media_type
-
 
 def build_prompt(active_checks: list[str], temperature: float) -> str:
     checks_str = "\n".join(f"- {c}" for c in active_checks)
@@ -485,13 +456,11 @@ Expected JSON structure:
 }}
 Respond EXCLUSIVELY with the raw JSON object, written in French inside."""
 
-
 if analyze_btn and uploaded and api_key:
     img_data, media_type = encode_image(uploaded)
     active = [label for label, checked in selected_checks.items() if checked]
     
     prompt_brut = build_prompt(active, ext_temp)
-    # 🌟 BLINDAGE MAXIMUM : On retire absolument tous les accents cachés du prompt textuel
     prompt_strict_ascii = remove_accents(prompt_brut)
 
     with st.spinner("🤖 Analyse en cours…"):
@@ -513,21 +482,18 @@ if analyze_btn and uploaded and api_key:
                                     "data": img_data,
                                 },
                             },
-                            {"type": "text", "text": prompt_strict_ascii}, # Envoi garanti 100% sans accent
+                            {"type": "text", "text": prompt_strict_ascii},
                         ],
                     }
                 ],
             )
 
             raw = message.content[0].text.strip()
-            # Nettoyage de la réponse de l'IA (en ignorant les soucis de décodage système)
             raw = str(raw).encode("utf-8", errors="ignore").decode("utf-8")
             raw = raw.replace("```json", "").replace("```", "").strip()
             
             result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            
-            # Nettoyage ASCII strict du nom du fichier
             result["filename"] = remove_accents(uploaded.name)
 
             st.session_state.last_analysis = result
@@ -535,11 +501,10 @@ if analyze_btn and uploaded and api_key:
             st.rerun()
 
         except json.JSONDecodeError:
-            st.error("❌ L'IA n'a pas retourne un JSON valide.")
+            st.error("❌ L'IA n'a pas retourné un JSON valide.")
         except anthropic.AuthenticationError:
-            st.error("❌ Cle API invalide. Verifiez votre configuration.")
+            st.error("❌ Clé API invalide. Vérifiez votre configuration.")
         except Exception as e:
-            # Nettoyage complet du message d'erreur pour éviter le crash de l'affichage
             safe_error_msg = remove_accents(str(e))
             st.error(f"❌ Erreur de traitement : {safe_error_msg}")
 
@@ -552,7 +517,7 @@ if st.session_state.history:
 
     for item in st.session_state.history:
         sev = item.get("severity", "low")
-        sev_cls = {"high": "history-severity-high", "medium": "history-severity-medium", "low": "history-severity-low"}..get(sev, "history-severity-low")
+        sev_cls = {"high": "history-severity-high", "medium": "history-severity-medium", "low": "history-severity-low"}.get(sev, "history-severity-low")
         emoji  = {"high": "🚨", "medium": "⚡", "low": "✅"}.get(sev, "✅")
         n_inc  = len(item.get("incidents", []))
 
@@ -568,6 +533,7 @@ if st.session_state.history:
                 <span class="history-time">{item.get('timestamp','')}</span>
             </div>
             <div style="color:#475569;font-size:13px">{safe_summary}</div>
-            <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) detecte(s)</div>
+            <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) détecté(s)</div>
         </div>
         """, unsafe_allow_html=True)
+        
