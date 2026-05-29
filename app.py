@@ -200,10 +200,9 @@ div[data-testid="stFileUploader"] {
 # ─────────────────────────────────────────────
 #  FONCTION METEO (Open-Meteo API)
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=900)  # Conserve la météo en cache pendant 15 minutes
+@st.cache_data(ttl=900)
 def get_weather_data():
     try:
-        # Coordonnées par défaut (Exemple : Paris. Latitude: 48.8566, Longitude: 2.3522)
         url = "https://api.open-meteo.com/v1/forecast?latitude=48.8566&longitude=2.3522&current_weather=true"
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -215,7 +214,6 @@ def get_weather_data():
         pass
     return None, None
 
-# Récupération des données météo extérieures
 ext_temp, weather_code = get_weather_data()
 
 # ─────────────────────────────────────────────
@@ -234,14 +232,12 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ⚙️ Configuration")
 
-    # Chargement de la clé API
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
     if not api_key:
         api_key = st.text_input(
             "Clé API Anthropic",
             type="password",
             placeholder="sk-ant-...",
-            help="Obtiens ta clé sur console.anthropic.com"
         )
     else:
         st.success("🔑 Clé API chargée automatiquement")
@@ -344,7 +340,7 @@ with col_right:
     
     # ── BLOC MÉTÉO & CLIMATISATION ──
     st.markdown('<div class="cw-card">', unsafe_allow_html=True)
-    st.markdown('<div class="cw-card-title">🌤| Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cw-card-title">🌤️ Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
     if ext_temp is not None:
         need_clim = ext_temp >= 26.0
         clim_badge = '<span class="incident-badge badge-danger">❄️ AC Requise (Chaud)</span>' if need_clim else '<span class="incident-badge badge-success">🍃 Température OK (Pas de clim)</span>'
@@ -436,7 +432,6 @@ with col_right:
 #  ANALYSE LOGIC
 # ─────────────────────────────────────────────
 def encode_image(file) -> tuple[str, str]:
-    """Encode l'image en base64 de manière sécurisée en UTF-8."""
     ext = file.name.split(".")[-1].lower()
     media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
                  "png": "image/png", "webp": "image/webp"}
@@ -449,10 +444,9 @@ def encode_image(file) -> tuple[str, str]:
 
 def build_prompt(active_checks: list[str], temperature: float) -> str:
     checks_str = "\n".join(f"- {c}" for c in active_checks)
-    
     clim_instruction = ""
     if temperature is not None:
-        clim_instruction = f"- ATTENTION CONTEXTE THERMIQUE : La température extérieure est actuellement de {temperature}°C. Si elle est élevée (ex: >= 26°C), vérifie visuellement sur l'image si la climatisation semble nécessaire, si des fenêtres sont restées ouvertes anormalement, et ajoute une recommandation adaptée."
+        clim_instruction = f"- CONTEXTE METEO : Il fait {temperature}°C dehors. Si la température >= 26°C, signale l'activation obligatoire de la clim dans le résumé ou les recommandations."
 
     return f"""Tu es un système expert de surveillance de salle de classe.
 Analyse cette photo et retourne UNIQUEMENT un objet JSON valide (sans balises markdown, sans texte avant/après).
@@ -467,34 +461,24 @@ Structure JSON attendue :
   "summary": "Résumé en 1-2 phrases de l'état général de la salle",
   "incidents": [
     {{
-      "label": "Nom court de l'incident",
+      "label": "Nom court",
       "level": "danger" | "warning" | "success" | "info",
-      "detail": "Description précise"
+      "detail": "Description"
     }}
   ],
   "recommendations": [
-    "Action concrète recommandée 1",
-    "Action concrète recommandée 2"
+    "Recommandation 1"
   ]
 }}
-
-Règles :
-- severity=high si un incident critique (chaise renversée, prof absent, danger visible)
-- severity=medium si situation anormale mais pas urgente
-- severity=low si tout est normal
-- Sois précis et factuel, base-toi uniquement sur ce que tu vois
-- Réponds EXCLUSIVEMENT en JSON valide"""
+Réponds EXCLUSIVEMENT en JSON valide."""
 
 
 if analyze_btn and uploaded and api_key:
-    # Encodage en base64 nettoyé (UTF-8)
     img_data, media_type = encode_image(uploaded)
-
-    # Récupération sécurisée des options cochées
     active = [label for label, checked in selected_checks.items() if checked]
     
-    # Génération et nettoyage forcé du prompt au format UTF-8 pur
     prompt_brut = build_prompt(active, ext_temp)
+    # On force l'encodage UTF-8 pur
     prompt_utf8 = prompt_brut.encode('utf-8', errors='ignore').decode('utf-8')
 
     with st.spinner("🤖 Analyse en cours…"):
@@ -522,58 +506,59 @@ if analyze_btn and uploaded and api_key:
                 ],
             )
 
-            # Nettoyage et encadrement strict de la chaîne de sortie
             raw = message.content[0].text.strip()
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8", errors="replace")
-            else:
-                raw = str(raw).encode("utf-8", errors="ignore").decode("utf-8")
-                
+            # Nettoyage et conversion stricte en string UTF-8
+            raw = str(raw).encode("utf-8", errors="ignore").decode("utf-8")
             raw = raw.replace("```json", "").replace("```", "").strip()
             
             result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             
-            # Nettoyage UTF-8 du nom de fichier pour l'historique
+            # Nettoyage complet du nom de fichier
             safe_filename = uploaded.name.encode('utf-8', errors='ignore').decode('utf-8')
-            result["filename"]  = safe_filename
+            result["filename"] = safe_filename
 
             st.session_state.last_analysis = result
             st.session_state.history.insert(0, result)
             st.rerun()
 
         except json.JSONDecodeError:
-            st.error("❌ L'IA n'a pas retourné un JSON valide. Réessaie.")
+            st.error("❌ L'IA n'a pas retourné un JSON valide.")
         except anthropic.AuthenticationError:
-            st.error("❌ Clé API invalide. Vérifie ta clé dans la barre latérale.")
+            st.error("❌ Clé API invalide. Vérifie ta configuration.")
         except Exception as e:
-            st.error(f"❌ Erreur inattendue : {e}")
+            # 💡 LA CORRECTION DU BUG REPOSE ICI :
+            # On force la conversion de l'objet exception 'e' en chaîne UTF-8 sécurisée 
+            # pour empêcher que le message d'erreur lui-même ne fasse crasher le codec ASCII.
+            safe_error_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8')
+            st.error(f"❌ Erreur de traitement : {safe_error_msg}")
 
 # ─────────────────────────────────────────────
 #  HISTORIQUE
 # ─────────────────────────────────────────────
 if st.session_state.history:
     st.markdown("---")
-    st.markdown('<div class="cw-card-title" style="margin-bottom:16px">🕐 Historique des analyses</div>',
-                unsafe_allow_html=True)
+    st.markdown('<div class="cw-card-title" style="margin-bottom:16px">🕐 Historique des analyses</div>', unsafe_allow_html=True)
 
     for item in st.session_state.history:
         sev = item.get("severity", "low")
-        sev_cls = {"high": "history-severity-high",
-                   "medium": "history-severity-medium",
-                   "low": "history-severity-low"}.get(sev, "history-severity-low")
+        sev_cls = {"high": "history-severity-high", "medium": "history-severity-medium", "low": "history-severity-low"}.get(sev, "history-severity-low")
         emoji  = {"high": "🚨", "medium": "⚡", "low": "✅"}.get(sev, "✅")
         n_inc  = len(item.get("incidents", []))
+
+        # Sécurisation des chaînes de caractères affichées dans l'historique HTML
+        safe_summary = str(item.get('summary','')).encode('utf-8', errors='ignore').decode('utf-8')
+        safe_name = str(item.get('filename','photo')).encode('utf-8', errors='ignore').decode('utf-8')
 
         st.markdown(f"""
         <div class="history-item {sev_cls}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <span style="font-weight:600;font-size:14px;color:#1E293B">
-                    {emoji} {item.get('filename','photo')}
+                    {emoji} {safe_name}
                 </span>
                 <span class="history-time">{item.get('timestamp','')}</span>
             </div>
-            <div style="color:#475569;font-size:13px">{item.get('summary','')}</div>
+            <div style="color:#475569;font-size:13px">{safe_summary}</div>
             <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) détecté(s)</div>
         </div>
         """, unsafe_allow_html=True)
