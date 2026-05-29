@@ -419,7 +419,7 @@ if analyze_btn and uploaded and api_key:
 
             client = anthropic.Anthropic(api_key=clean_key)
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-3-5-sonnet-20241022",  # CORRECTION ICI : Vrai nom du modèle officiel
                 max_tokens=1000,
                 messages=[
                     {
