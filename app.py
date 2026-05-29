@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from PIL import Image
 import io
-import requests  # Ajouté pour récupérer la météo
+import requests  # Nécessaire pour récupérer la météo en temps réel
 
 # ─────────────────────────────────────────────
 #  PAGE CONFIG
@@ -200,7 +200,7 @@ div[data-testid="stFileUploader"] {
 # ─────────────────────────────────────────────
 #  FONCTION METEO (Open-Meteo API)
 # ─────────────────────────────────────────────
-@st.cache_data(ttl=900)  # Garde la météo en cache 15 minutes
+@st.cache_data(ttl=900)  # Conserve la météo en cache pendant 15 minutes
 def get_weather_data():
     try:
         # Coordonnées par défaut (Exemple : Paris. Latitude: 48.8566, Longitude: 2.3522)
@@ -215,7 +215,7 @@ def get_weather_data():
         pass
     return None, None
 
-# Récupération de la météo actuelle
+# Récupération des données météo extérieures
 ext_temp, weather_code = get_weather_data()
 
 # ─────────────────────────────────────────────
@@ -234,6 +234,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ⚙️ Configuration")
 
+    # Chargement de la clé API
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
     if not api_key:
         api_key = st.text_input(
@@ -343,7 +344,7 @@ with col_right:
     
     # ── BLOC MÉTÉO & CLIMATISATION ──
     st.markdown('<div class="cw-card">', unsafe_allow_html=True)
-    st.markdown('<div class="cw-card-title">🌤️ Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
+    st.markdown('<div class="cw-card-title">🌤| Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
     if ext_temp is not None:
         need_clim = ext_temp >= 26.0
         clim_badge = '<span class="incident-badge badge-danger">❄️ AC Requise (Chaud)</span>' if need_clim else '<span class="incident-badge badge-success">🍃 Température OK (Pas de clim)</span>'
@@ -440,8 +441,9 @@ def encode_image(file) -> tuple[str, str]:
     media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
                  "png": "image/png", "webp": "image/webp"}
     media_type = media_map.get(ext, "image/jpeg")
-    raw_bytes = file.getvalue()  # Utilisation sécurisée de getvalue() pour éviter les erreurs d'encodage du flux de nom
-    data = base64.b64encode(raw_bytes).decode("utf-8") # Remplacé ascii par utf-8
+    
+    raw_bytes = file.getvalue()
+    data = base64.b64encode(raw_bytes).decode("utf-8")
     return data, media_type
 
 
@@ -450,7 +452,7 @@ def build_prompt(active_checks: list[str], temperature: float) -> str:
     
     clim_instruction = ""
     if temperature is not None:
-        clim_instruction = f"- ATTENTION : La température extérieure est de {temperature}°C. Si elle dépasse 26°C, vérifie si les fenêtres sont bien fermées pour la clim, ou mentionne de l'allumer s'il fait trop chaud à l'intérieur."
+        clim_instruction = f"- ATTENTION CONTEXTE THERMIQUE : La température extérieure est actuellement de {temperature}°C. Si elle est élevée (ex: >= 26°C), vérifie visuellement sur l'image si la climatisation semble nécessaire, si des fenêtres sont restées ouvertes anormalement, et ajoute une recommandation adaptée."
 
     return f"""Tu es un système expert de surveillance de salle de classe.
 Analyse cette photo et retourne UNIQUEMENT un objet JSON valide (sans balises markdown, sans texte avant/après).
@@ -485,11 +487,15 @@ Règles :
 
 
 if analyze_btn and uploaded and api_key:
-    # Encodage sécurisé de l'image
+    # Encodage en base64 nettoyé (UTF-8)
     img_data, media_type = encode_image(uploaded)
 
+    # Récupération sécurisée des options cochées
     active = [label for label, checked in selected_checks.items() if checked]
-    prompt = build_prompt(active, ext_temp)
+    
+    # Génération et nettoyage forcé du prompt au format UTF-8 pur
+    prompt_brut = build_prompt(active, ext_temp)
+    prompt_utf8 = prompt_brut.encode('utf-8', errors='ignore').decode('utf-8')
 
     with st.spinner("🤖 Analyse en cours…"):
         try:
@@ -510,19 +516,27 @@ if analyze_btn and uploaded and api_key:
                                     "data": img_data,
                                 },
                             },
-                            {"type": "text", "text": prompt},
+                            {"type": "text", "text": prompt_utf8},
                         ],
                     }
                 ],
             )
 
+            # Nettoyage et encadrement strict de la chaîne de sortie
             raw = message.content[0].text.strip()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", errors="replace")
+            else:
+                raw = str(raw).encode("utf-8", errors="ignore").decode("utf-8")
+                
             raw = raw.replace("```json", "").replace("```", "").strip()
             
             result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            # Nettoyage optionnel du nom de fichier pour l'historique
-            result["filename"]  = uploaded.name
+            
+            # Nettoyage UTF-8 du nom de fichier pour l'historique
+            safe_filename = uploaded.name.encode('utf-8', errors='ignore').decode('utf-8')
+            result["filename"]  = safe_filename
 
             st.session_state.last_analysis = result
             st.session_state.history.insert(0, result)
