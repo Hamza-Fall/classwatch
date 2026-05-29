@@ -6,6 +6,7 @@ from datetime import datetime
 from PIL import Image
 import io
 import requests  # Nécessaire pour récupérer la météo en temps réel
+import unicodedata
 
 # ─────────────────────────────────────────────
 #  PAGE CONFIG
@@ -198,6 +199,18 @@ div[data-testid="stFileUploader"] {
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+#  FONCTION SÉCURITÉ ENCODAGE (Suppression des accents)
+# ─────────────────────────────────────────────
+def remove_accents(input_str: str) -> str:
+    """Supprime tous les accents et caractères non-ASCII d'une chaîne pour éviter le bug de codec."""
+    # Décompose les caractères accentués (ex: 'é' devient 'e' + accent)
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    # Filtre pour ne garder que les caractères de base non-accentués
+    only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+    # Encodage de secours pour éliminer définitivement tout résidu invisible non-ASCII
+    return only_ascii.encode('ascii', errors='ignore').decode('ascii')
+
+# ─────────────────────────────────────────────
 #  FONCTION METEO (Open-Meteo API)
 # ─────────────────────────────────────────────
 @st.cache_data(ttl=900)
@@ -246,13 +259,13 @@ with st.sidebar:
     st.markdown("### 🎯 Incidents détectés")
 
     checks = {
-        "👨‍🏫 Présence du professeur": True,
-        "🪑 Chaises renversées": True,
-        "💻 Ordinateurs allumés": True,
-        "🎒 Affaires abandonnées": True,
+        "👨‍🏫 Presence du professeur": True,
+        "🪑 Chaises renversees": True,
+        "💻 Ordinateurs allumes": True,
+        "🎒 Affaires abandonnees": True,
         "🚪 Portes ouvertes": True,
-        "📺 Écran allumé": True,
-        "🏃 Élèves debout": True,
+        "📺 Ecran allume": True,
+        "🏃 Eleves debout": True,
         "🔇 Ambiance calme": True,
     }
 
@@ -277,7 +290,7 @@ st.markdown("""
     <div class="cw-header-icon">🏫</div>
     <div>
         <div class="cw-header-title">ClassWatch — Gestion des incidents</div>
-        <div class="cw-header-sub">Analysez votre salle de classe en temps réel grâce à l'IA</div>
+        <div class="cw-header-sub">Analyse de la salle de classe en temps réel</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -317,14 +330,14 @@ with col_left:
     st.markdown('<div class="cw-card-title">📷 Photo de la salle</div>', unsafe_allow_html=True)
 
     uploaded = st.file_uploader(
-        "Glisse une photo ici ou clique pour en choisir une",
+        "Glisse une photo ici ou clique",
         type=["jpg", "jpeg", "png", "webp"],
         label_visibility="collapsed"
     )
 
     if uploaded:
         img = Image.open(uploaded)
-        st.image(img, use_container_width=True, caption="Aperçu de la photo")
+        st.image(img, use_container_width=True, caption="Aperçu")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -354,7 +367,7 @@ with col_right:
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.markdown("<p style='color:#64748B; font-size:13px;'>Impossible de charger la météo en temps réel.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#64748B; font-size:13px;'>Impossible de charger la météo.</p>", unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.last_analysis:
@@ -423,7 +436,7 @@ with col_right:
                 Aucune analyse en cours
             </div>
             <div style="color:#94A3B8;font-size:14px">
-                Charge une photo et clique sur "Analyser la salle"
+                Chargez une photo et cliquez sur "Analyser la salle"
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -438,7 +451,7 @@ def encode_image(file) -> tuple[str, str]:
     media_type = media_map.get(ext, "image/jpeg")
     
     raw_bytes = file.getvalue()
-    data = base64.b64encode(raw_bytes).decode("utf-8")
+    data = base64.b64encode(raw_bytes).decode("ascii") # Base64 pur ne contient aucun caractère accentué, ascii est sûr ici
     return data, media_type
 
 
@@ -446,31 +459,31 @@ def build_prompt(active_checks: list[str], temperature: float) -> str:
     checks_str = "\n".join(f"- {c}" for c in active_checks)
     clim_instruction = ""
     if temperature is not None:
-        clim_instruction = f"- CONTEXTE METEO : Il fait {temperature}°C dehors. Si la température >= 26°C, signale l'activation obligatoire de la clim dans le résumé ou les recommandations."
+        clim_instruction = f"- METEO CONTEXT : Ext temperature is {temperature}C. If >= 26C, suggest AC activation in recommendations."
 
-    return f"""Tu es un système expert de surveillance de salle de classe.
-Analyse cette photo et retourne UNIQUEMENT un objet JSON valide (sans balises markdown, sans texte avant/après).
+    return f"""You are a classroom monitoring system.
+Analyze this photo and return ONLY a valid JSON object (no markdown, no wrap).
 
-Points à vérifier :
+Items to check:
 {checks_str}
 {clim_instruction}
 
-Structure JSON attendue :
+Expected JSON structure:
 {{
   "severity": "high" | "medium" | "low",
-  "summary": "Résumé en 1-2 phrases de l'état général de la salle",
+  "summary": "1-2 sentences summary in French",
   "incidents": [
     {{
-      "label": "Nom court",
+      "label": "Short label in French",
       "level": "danger" | "warning" | "success" | "info",
-      "detail": "Description"
+      "detail": "Description in French"
     }}
   ],
   "recommendations": [
-    "Recommandation 1"
+    "Recommendation 1 in French"
   ]
 }}
-Réponds EXCLUSIVEMENT en JSON valide."""
+Respond EXCLUSIVELY with the raw JSON object, written in French inside."""
 
 
 if analyze_btn and uploaded and api_key:
@@ -478,8 +491,8 @@ if analyze_btn and uploaded and api_key:
     active = [label for label, checked in selected_checks.items() if checked]
     
     prompt_brut = build_prompt(active, ext_temp)
-    # On force l'encodage UTF-8 pur
-    prompt_utf8 = prompt_brut.encode('utf-8', errors='ignore').decode('utf-8')
+    # 🌟 BLINDAGE MAXIMUM : On retire absolument tous les accents cachés du prompt textuel
+    prompt_strict_ascii = remove_accents(prompt_brut)
 
     with st.spinner("🤖 Analyse en cours…"):
         try:
@@ -500,37 +513,34 @@ if analyze_btn and uploaded and api_key:
                                     "data": img_data,
                                 },
                             },
-                            {"type": "text", "text": prompt_utf8},
+                            {"type": "text", "text": prompt_strict_ascii}, # Envoi garanti 100% sans accent
                         ],
                     }
                 ],
             )
 
             raw = message.content[0].text.strip()
-            # Nettoyage et conversion stricte en string UTF-8
+            # Nettoyage de la réponse de l'IA (en ignorant les soucis de décodage système)
             raw = str(raw).encode("utf-8", errors="ignore").decode("utf-8")
             raw = raw.replace("```json", "").replace("```", "").strip()
             
             result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             
-            # Nettoyage complet du nom de fichier
-            safe_filename = uploaded.name.encode('utf-8', errors='ignore').decode('utf-8')
-            result["filename"] = safe_filename
+            # Nettoyage ASCII strict du nom du fichier
+            result["filename"] = remove_accents(uploaded.name)
 
             st.session_state.last_analysis = result
             st.session_state.history.insert(0, result)
             st.rerun()
 
         except json.JSONDecodeError:
-            st.error("❌ L'IA n'a pas retourné un JSON valide.")
+            st.error("❌ L'IA n'a pas retourne un JSON valide.")
         except anthropic.AuthenticationError:
-            st.error("❌ Clé API invalide. Vérifie ta configuration.")
+            st.error("❌ Cle API invalide. Verifiez votre configuration.")
         except Exception as e:
-            # 💡 LA CORRECTION DU BUG REPOSE ICI :
-            # On force la conversion de l'objet exception 'e' en chaîne UTF-8 sécurisée 
-            # pour empêcher que le message d'erreur lui-même ne fasse crasher le codec ASCII.
-            safe_error_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8')
+            # Nettoyage complet du message d'erreur pour éviter le crash de l'affichage
+            safe_error_msg = remove_accents(str(e))
             st.error(f"❌ Erreur de traitement : {safe_error_msg}")
 
 # ─────────────────────────────────────────────
@@ -542,13 +552,12 @@ if st.session_state.history:
 
     for item in st.session_state.history:
         sev = item.get("severity", "low")
-        sev_cls = {"high": "history-severity-high", "medium": "history-severity-medium", "low": "history-severity-low"}.get(sev, "history-severity-low")
+        sev_cls = {"high": "history-severity-high", "medium": "history-severity-medium", "low": "history-severity-low"}..get(sev, "history-severity-low")
         emoji  = {"high": "🚨", "medium": "⚡", "low": "✅"}.get(sev, "✅")
         n_inc  = len(item.get("incidents", []))
 
-        # Sécurisation des chaînes de caractères affichées dans l'historique HTML
-        safe_summary = str(item.get('summary','')).encode('utf-8', errors='ignore').decode('utf-8')
-        safe_name = str(item.get('filename','photo')).encode('utf-8', errors='ignore').decode('utf-8')
+        safe_summary = remove_accents(str(item.get('summary','')))
+        safe_name = remove_accents(str(item.get('filename','photo')))
 
         st.markdown(f"""
         <div class="history-item {sev_cls}">
@@ -559,6 +568,6 @@ if st.session_state.history:
                 <span class="history-time">{item.get('timestamp','')}</span>
             </div>
             <div style="color:#475569;font-size:13px">{safe_summary}</div>
-            <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) détecté(s)</div>
+            <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) detecte(s)</div>
         </div>
         """, unsafe_allow_html=True)
