@@ -409,44 +409,36 @@ def encode_image(file) -> tuple[str, str]:
 
 
 def build_prompt(active_checks: list[str]) -> str:
-    checks_str = "
-".join(f"- {c}" for c in active_checks)
-    return (
-        "You are a classroom monitoring expert. "
-        "Analyze the photo and return ONLY valid JSON (no markdown, no extra text).
+    checks_str = "\n".join(f"- {c}" for c in active_checks)
+    return f"""Tu es un système expert de surveillance de salle de classe.
+Analyse cette photo et retourne UNIQUEMENT un objet JSON valide (sans balises markdown, sans texte avant/après).
 
-"
-        "Check these points:
-" + checks_str + "
+Points à vérifier :
+{checks_str}
 
-"
-        'Return this exact JSON structure:
-'
-        '{
-'
-        '  "severity": "high" or "medium" or "low",
-'
-        '  "summary": "2-sentence classroom summary IN FRENCH",
-'
-        '  "incidents": [{"label": "IN FRENCH", "level": "danger/warning/success/info", "detail": "IN FRENCH"}],
-'
-        '  "recommendations": ["action IN FRENCH"]
-'
-        '}
+Structure JSON attendue :
+{{
+  "severity": "high" | "medium" | "low",
+  "summary": "Résumé en 1-2 phrases de l'état général de la salle",
+  "incidents": [
+    {{
+      "label": "Nom court de l'incident",
+      "level": "danger" | "warning" | "success" | "info",
+      "detail": "Description précise"
+    }}
+  ],
+  "recommendations": [
+    "Action concrète recommandée 1",
+    "Action concrète recommandée 2"
+  ]
+}}
 
-'
-        "Rules:
-"
-        "- severity=high: overturned chair, teacher absent, danger
-"
-        "- severity=medium: abnormal but not urgent
-"
-        "- severity=low: everything normal
-"
-        "- Write ALL text values in French
-"
-        "- Return ONLY valid JSON, nothing else"
-    )
+Règles :
+- severity=high si un incident critique (chaise renversée, prof absent, danger visible)
+- severity=medium si situation anormale mais pas urgente
+- severity=low si tout est normal
+- Sois précis et factuel, base-toi uniquement sur ce que tu vois
+- Réponds EXCLUSIVEMENT en JSON valide"""
 
 
 if analyze_btn and uploaded and api_key:
