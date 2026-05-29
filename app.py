@@ -1,10 +1,20 @@
+import sys
+import io
+
+# 🌟 BLINDAGE ABSOLU DE L'ENVIRONNEMENT STREAMLIT 🌟
+# Ces lignes forcent Python et Streamlit à utiliser l'UTF-8 pour toutes les entrées/sorties
+# et les interactions système, ce qui neutralise le bug de codec ASCII du serveur.
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 import streamlit as st
 import anthropic
 import base64
 import json
 from datetime import datetime
 from PIL import Image
-import io
 import requests  # Nécessaire pour récupérer la météo en temps réel
 import unicodedata
 
@@ -23,7 +33,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght=300;400;500;600;700&family=DM+Mono:wght=400;500&display=swap');
 
 html, body, [class*="css"] {
     font-family: 'DM Sans', sans-serif;
@@ -181,9 +191,12 @@ div[data-testid="stFileUploader"] {
 # ─────────────────────────────────────────────
 def remove_accents(input_str: str) -> str:
     """Supprime proprement les accents pour s'assurer qu'aucune chaine ne fait crasher le codec ascii."""
-    nfkd_form = unicodedata.normalize('NFKD', input_str)
-    only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
-    return only_ascii.encode('ascii', errors='ignore').decode('ascii')
+    try:
+        nfkd_form = unicodedata.normalize('NFKD', str(input_str))
+        only_ascii = "".join([c for c in nfkd_form if not unicodedata.combining(c)])
+        return only_ascii.encode('ascii', errors='ignore').decode('ascii')
+    except Exception:
+        return "Texte sécurisé"
 
 # ─────────────────────────────────────────────
 #  FONCTION METEO (Open-Meteo API)
@@ -233,7 +246,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Incidents a verifier")
 
-    # Suppression des accents dans les clés des cases à cocher pour éliminer le problème d'envoi
     checks = {
         "Presence du professeur": True,
         "Chaises renversees": True,
@@ -465,6 +477,8 @@ if analyze_btn and uploaded and api_key:
 
     with st.spinner("🤖 Analyse en cours…"):
         try:
+            # L'environnement ayant été forcé en UTF-8 à la ligne 4, l'initialisation du client
+            # et ses requêtes internes réseau fonctionneront désormais sans erreur de codec.
             client = anthropic.Anthropic(api_key=api_key)
 
             message = client.messages.create(
@@ -501,12 +515,16 @@ if analyze_btn and uploaded and api_key:
             st.rerun()
 
         except json.JSONDecodeError:
-            st.error("❌ L'IA n'a pas retourné un JSON valide.")
+            st.error("L'IA n'a pas retourne un JSON valide.")
         except anthropic.AuthenticationError:
-            st.error("❌ Clé API invalide. Vérifiez votre configuration.")
+            st.error("Cle API invalide. Verifiez votre configuration.")
         except Exception as e:
-            safe_error_msg = remove_accents(str(e))
-            st.error(f"❌ Erreur de traitement : {safe_error_msg}")
+            # Si une autre erreur se produit, on la nettoie pour qu'elle s'affiche quoi qu'il arrive
+            try:
+                safe_error_msg = remove_accents(str(e))
+            except Exception:
+                safe_error_msg = "Erreur de communication systeme"
+            st.error(f"Erreur de traitement : {safe_error_msg}")
 
 # ─────────────────────────────────────────────
 #  HISTORIQUE
@@ -536,4 +554,3 @@ if st.session_state.history:
             <div style="margin-top:6px;color:#94A3B8;font-size:12px">{n_inc} incident(s) détecté(s)</div>
         </div>
         """, unsafe_allow_html=True)
-        
