@@ -403,7 +403,8 @@ def encode_image(file) -> tuple[str, str]:
     media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
                  "png": "image/png", "webp": "image/webp"}
     media_type = media_map.get(ext, "image/jpeg")
-    data = base64.standard_b64encode(file.read()).decode("utf-8")
+    raw_bytes = file.read()
+    data = base64.b64encode(raw_bytes).decode("ascii")
     return data, media_type
 
 
@@ -475,7 +476,10 @@ if analyze_btn and uploaded and api_key:
             raw = message.content[0].text.strip()
             # Nettoie les éventuelles balises markdown
             raw = raw.replace("```json", "").replace("```", "").strip()
-            result = json.loads(raw)
+            # Fix encodage UTF-8 / accents français
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             result["filename"]  = uploaded.name
 
