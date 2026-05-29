@@ -411,7 +411,7 @@ if analyze_btn and uploaded and api_key:
 
     with st.spinner("Analyse en cours..."):
         try:
-            # Nettoyage et normalisation de la chaîne de caractères de la clé API
+            # Sécurité Encodage & Nettoyage : Retire les guillemets et espaces invisibles
             clean_key = str(api_key).strip()
             if clean_key.startswith(('"', "'")) and clean_key.endswith(('"', "'")):
                 clean_key = clean_key[1:-1].strip()
