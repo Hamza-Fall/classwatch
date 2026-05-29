@@ -33,7 +33,7 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght=300;400;500;600;700&family=DM+Mono:wght=400;500&display=swap');
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 .stApp { background: #F4F6FA; }
@@ -241,7 +241,7 @@ st.markdown("""
     <div class="cw-header-icon">🏫</div>
     <div>
         <div class="cw-header-title">ClassWatch — Gestion des incidents</div>
-        <div class="cw-header-sub">Analysez votre salle de classe en temps reel grace a l'IA</div>
+        <div class="cw-header-sub">Analyisez votre salle de classe en temps reel grace a l'IA</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -411,7 +411,12 @@ if analyze_btn and uploaded and api_key:
 
     with st.spinner("Analyse en cours..."):
         try:
-            clean_key = api_key.strip().encode("ascii", errors="ignore").decode("ascii")
+            # Nettoyage et normalisation de la chaîne de caractères de la clé API
+            clean_key = str(api_key).strip()
+            if clean_key.startswith(('"', "'")) and clean_key.endswith(('"', "'")):
+                clean_key = clean_key[1:-1].strip()
+            clean_key = clean_key.encode("ascii", errors="ignore").decode("ascii")
+
             client = anthropic.Anthropic(api_key=clean_key)
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -436,9 +441,9 @@ if analyze_btn and uploaded and api_key:
 
             raw = message.content[0].text.strip()
             raw = raw.replace("```json", "").replace("```", "").strip()
-            # Ensure the raw string is proper unicode before parsing
+            
             result = json.loads(raw)
-            # Sanitize all string values in result to be safe
+            
             def sanitize(obj):
                 if isinstance(obj, str):
                     return obj.encode("utf-8").decode("utf-8")
@@ -447,6 +452,7 @@ if analyze_btn and uploaded and api_key:
                 elif isinstance(obj, dict):
                     return {k: sanitize(v) for k, v in obj.items()}
                 return obj
+                
             result = sanitize(result)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             result["filename"] = "photo"
