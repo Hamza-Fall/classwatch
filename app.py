@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from PIL import Image
 import io
+import requests  # Ajouté pour récupérer la météo
 
 # ─────────────────────────────────────────────
 #  PAGE CONFIG
@@ -197,6 +198,27 @@ div[data-testid="stFileUploader"] {
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+#  FONCTION METEO (Open-Meteo API)
+# ─────────────────────────────────────────────
+@st.cache_data(ttl=900)  # Garde la météo en cache 15 minutes
+def get_weather_data():
+    try:
+        # Coordonnées par défaut (Exemple : Paris. Latitude: 48.8566, Longitude: 2.3522)
+        url = "https://api.open-meteo.com/v1/forecast?latitude=48.8566&longitude=2.3522&current_weather=true"
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            temp = data["current_weather"]["temperature"]
+            code = data["current_weather"]["weathercode"]
+            return temp, code
+    except Exception:
+        pass
+    return None, None
+
+# Récupération de la météo actuelle
+ext_temp, weather_code = get_weather_data()
+
+# ─────────────────────────────────────────────
 #  SESSION STATE
 # ─────────────────────────────────────────────
 if "history" not in st.session_state:
@@ -212,7 +234,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### ⚙️ Configuration")
 
-    # Charge la clé depuis les Secrets Streamlit Cloud, sinon champ manuel
     api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
     if not api_key:
         api_key = st.text_input(
@@ -310,7 +331,6 @@ with col_left:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Bouton analyser
     analyze_btn = st.button("🔍 Analyser la salle", disabled=(not uploaded or not api_key))
 
     if not api_key:
@@ -320,10 +340,29 @@ with col_left:
 
 # ── RIGHT: Résultats ──
 with col_right:
+    
+    # ── BLOC MÉTÉO & CLIMATISATION ──
+    st.markdown('<div class="cw-card">', unsafe_allow_html=True)
+    st.markdown('<div class="cw-card-title">🌤️ Conditions Thermiques & Météo</div>', unsafe_allow_html=True)
+    if ext_temp is not None:
+        need_clim = ext_temp >= 26.0
+        clim_badge = '<span class="incident-badge badge-danger">❄️ AC Requise (Chaud)</span>' if need_clim else '<span class="incident-badge badge-success">🍃 Température OK (Pas de clim)</span>'
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+                <span style="font-size: 24px; font-weight: 700; color:#1E293B;">{ext_temp}°C</span>
+                <p style="margin:0; color:#64748B; font-size:13px;">Température extérieure actuelle</p>
+            </div>
+            <div>{clim_badge}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("<p style='color:#64748B; font-size:13px;'>Impossible de charger la météo en temps réel.</p>", unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
     if st.session_state.last_analysis:
         data = st.session_state.last_analysis
 
-        # Statut général
         sev = data.get("severity", "low")
         sev_config = {
             "high":   ("dot-red",    "badge-danger",  "⚠️ Critique",  "Intervention requise"),
@@ -344,7 +383,6 @@ with col_right:
         </div>
         """, unsafe_allow_html=True)
 
-        # Incidents détectés
         incidents = data.get("incidents", [])
         if incidents:
             badges_html = ""
@@ -364,7 +402,6 @@ with col_right:
             </div>
             """, unsafe_allow_html=True)
 
-        # Recommandations
         recs = data.get("recommendations", [])
         if recs:
             recs_html = "".join(
@@ -398,23 +435,29 @@ with col_right:
 #  ANALYSE LOGIC
 # ─────────────────────────────────────────────
 def encode_image(file) -> tuple[str, str]:
-    """Encode l'image en base64 et retourne (data, media_type)."""
+    """Encode l'image en base64 de manière sécurisée en UTF-8."""
     ext = file.name.split(".")[-1].lower()
     media_map = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
                  "png": "image/png", "webp": "image/webp"}
     media_type = media_map.get(ext, "image/jpeg")
-    raw_bytes = file.read()
-    data = base64.b64encode(raw_bytes).decode("ascii")
+    raw_bytes = file.getvalue()  # Utilisation sécurisée de getvalue() pour éviter les erreurs d'encodage du flux de nom
+    data = base64.b64encode(raw_bytes).decode("utf-8") # Remplacé ascii par utf-8
     return data, media_type
 
 
-def build_prompt(active_checks: list[str]) -> str:
+def build_prompt(active_checks: list[str], temperature: float) -> str:
     checks_str = "\n".join(f"- {c}" for c in active_checks)
+    
+    clim_instruction = ""
+    if temperature is not None:
+        clim_instruction = f"- ATTENTION : La température extérieure est de {temperature}°C. Si elle dépasse 26°C, vérifie si les fenêtres sont bien fermées pour la clim, ou mentionne de l'allumer s'il fait trop chaud à l'intérieur."
+
     return f"""Tu es un système expert de surveillance de salle de classe.
 Analyse cette photo et retourne UNIQUEMENT un objet JSON valide (sans balises markdown, sans texte avant/après).
 
 Points à vérifier :
 {checks_str}
+{clim_instruction}
 
 Structure JSON attendue :
 {{
@@ -442,11 +485,11 @@ Règles :
 
 
 if analyze_btn and uploaded and api_key:
-    uploaded.seek(0)
+    # Encodage sécurisé de l'image
     img_data, media_type = encode_image(uploaded)
 
     active = [label for label, checked in selected_checks.items() if checked]
-    prompt = build_prompt(active)
+    prompt = build_prompt(active, ext_temp)
 
     with st.spinner("🤖 Analyse en cours…"):
         try:
@@ -474,13 +517,11 @@ if analyze_btn and uploaded and api_key:
             )
 
             raw = message.content[0].text.strip()
-            # Nettoie les éventuelles balises markdown
             raw = raw.replace("```json", "").replace("```", "").strip()
-            # Fix encodage UTF-8 / accents français
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8")
+            
             result = json.loads(raw, strict=False)
             result["timestamp"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            # Nettoyage optionnel du nom de fichier pour l'historique
             result["filename"]  = uploaded.name
 
             st.session_state.last_analysis = result
